@@ -30,6 +30,10 @@
 
 @docs/progress.md
 
+- 비공개 도구의 진행·설계·미정·알려진 문제 → `private/docs/progress.md` (공개 쪽에는 도구 이름과 단계만)
+
+@private/docs/progress.md
+
 ## 하지 말 것
 - 이 폴더 밖의 파일은 셸 명령(cp, mv, Remove-Item 등)으로도 수정하거나 삭제하지 않는다. 읽기는 괜찮다. (Edit/Write는 훅이 막지만 셸 명령은 못 막는다)
 - 저장소가 public이다. 개인정보, 토큰, 개인 경로가 담긴 설정은 커밋하지 않는다(`private/` 안은 비공개 저장소라 예외지만 토큰은 거기서도 커밋하지 않는다).
