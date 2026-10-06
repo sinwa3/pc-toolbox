@@ -6,7 +6,7 @@ paths:
 # 유저스크립트 규칙
 
 - 파일 이름은 `tools/<이름>/<이름>.user.js`. 헤더에 `@name`, `@namespace`, `@version`, `@author`(sinwa), `@description`, `@match`, `@grant`, `@updateURL`, `@downloadURL`을 넣는다. `@grant`가 필요 없으면 `@grant none`.
-- raw 링크: `https://raw.githubusercontent.com/sinwa3/pc-toolbox/main/tools/<이름>/<이름>.user.js` (`@updateURL`, `@downloadURL`도 이 주소). 루트 README 도구 목록의 "설치" 칸에도 이 링크를 건다.
+- raw 링크: `https://raw.githubusercontent.com/sinwa3/pc-toolbox/main/tools/<이름>/<이름>.user.js` (`@updateURL`, `@downloadURL`도 이 주소). 루트 README에는 도구마다 소개 블록(제목, 한두 줄 설명, 설치 버튼 배지 + 사용법 링크)을 추가하고, 설치 버튼에 이 링크를 건다.
 - `@match`는 실제로 쓰는 사이트로 좁힌다. `*://*/*`는 꼭 필요할 때만.
 - 수정할 때마다 `@version`을 올린다. 버전이 올라가야 Tampermonkey가 업데이트로 인식한다. push해야 자동 업데이트에 반영된다.
 - 도구 폴더 README는 아래 순서로 쓴다:
