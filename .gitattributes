@@ -1,0 +1,2 @@
+# bash 훅은 CRLF면 실행이 깨진다 (core.autocrlf=true 환경)
+*.sh text eol=lf
