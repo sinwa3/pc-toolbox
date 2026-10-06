@@ -1,7 +1,8 @@
 // ==UserScript==
 // @name         SOOP 다시보기 댓글 타임라인
 // @namespace    https://github.com/sinwa3/pc-toolbox
-// @version      0.1.2
+// @version      0.1.3
+// @author       sinwa
 // @description  다시보기 댓글·답글의 타임라인을 전부 모아 플레이어 오른쪽 패널에 보여주고, 클릭하면 그 시간으로 이동한다.
 // @match        https://vod.sooplive.com/player/*
 // @match        https://vod.sooplive.co.kr/player/*
