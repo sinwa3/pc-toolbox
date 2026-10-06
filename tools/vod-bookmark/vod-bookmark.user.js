@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         다시보기 책갈피 (숲·치지직)
 // @namespace    https://github.com/sinwa3/pc-toolbox
-// @version      0.1.1
+// @version      0.1.2
 // @author       sinwa
 // @description  숲·치지직 다시보기에 시간 책갈피(메모 포함, 영상당 5개)를 남기고, 어느 화면에서든 책갈피한 영상 목록을 열어 그 시간으로 바로 간다.
 // @match        https://chzzk.naver.com/*
@@ -246,7 +246,10 @@
       color: #ffc94d; background: rgba(20, 20, 20, .8); border: 1px solid rgba(255,255,255,.2); border-radius: 50%;
       cursor: pointer; opacity: .55; box-shadow: 0 2px 6px rgba(0,0,0,.3);
     }
-    #vbm-fab:hover, #vbm-fab.on { opacity: 1; }
+    #vbm-fab:hover { opacity: 1; }
+    #vbm-fab.fs { opacity: 0; transition: opacity .2s; }
+    #vbm-fab.fs:hover { opacity: .55; }
+    #vbm-fab.on, #vbm-fab.fs.on { opacity: 1; }
     #vbm-list {
       position: fixed; left: 12px; bottom: 56px; z-index: 2147483000;
       width: min(380px, calc(100vw - 24px)); max-height: 65vh; display: none; flex-direction: column;
@@ -387,6 +390,16 @@
   const list = el('div', { id: 'vbm-list' }, [listHead, videosBox]);
   const fab = el('button', { type: 'button', id: 'vbm-fab', title: '책갈피 영상', innerHTML: ICON });
   document.body.append(list, fab);
+
+  // 전체화면(플레이어 전체화면, F11 둘 다)에서는 영상을 가리지 않게 숨기고, 마우스를 올리면 다시 보인다
+  const fsQuery = matchMedia('(display-mode: fullscreen)');
+  const updateFab = () => {
+    const fs = !!document.fullscreenElement || fsQuery.matches || (innerWidth >= screen.width && innerHeight >= screen.height);
+    fab.classList.toggle('fs', fs);
+  };
+  document.addEventListener('fullscreenchange', updateFab);
+  addEventListener('resize', updateFab);
+  updateFab();
 
   const renderList = () => {
     if (!list.classList.contains('open')) return;
