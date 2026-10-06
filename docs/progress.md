@@ -4,7 +4,7 @@
 
 ## 지금 위치 / 다음 할 일
 
-**다음: 정해진 작업 없음.** 새 도구를 정하거나 배포한 도구의 피드백을 기다린다. 비공개 도구 file-organizer는 A·B·C 모두 완료(세부는 `private/docs/progress.md`).
+**다음: 정해진 작업 없음.** 새 도구를 정하거나 배포한 도구의 피드백을 기다린다. 비공개 도구 file-organizer는 A·B·C 모두 완료, secure-encoder는 사용자 확인 대기(세부는 `private/docs/progress.md`).
 - vod-bookmark v0.1.3 배포됨(사용자가 치지직·숲에서 확인 완료, 넓은 화면 겹침 문제 해결 확인). 피드백이 오면 수정.
 - soop-timeline v0.1.3 배포됨(`@author` 표시 확인). 피드백 대기 중. 아직 확인 못 한 것: 전체화면에서 패널 표시, Firefox 동작 (알려진 문제 참고)
 
@@ -19,6 +19,7 @@
 | 다시보기 책갈피 (vod-bookmark) | 완료 2026-10-06 | v0.1.3 배포, 숲·치지직 공용 유저스크립트 하나 |
 | 비공개 도구 공간 (`private/`) | 완료 2026-10-06 | 별도 비공개 저장소 pc-toolbox-private |
 | file-organizer (비공개) | 완료 2026-10-06 | A 규칙 점검 → B 정리 도우미 → C 자동 분류, 모두 사용자 확인 |
+| secure-encoder (비공개) | 사용자 확인 대기 | |
 
 ## 설계 결정
 
