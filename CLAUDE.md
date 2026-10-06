@@ -13,6 +13,7 @@
 ## 언어 고르는 기준
 - 바로가기, 파일 정리, 간단한 자동화 → PowerShell(.ps1) 또는 배치(.bat)
 - 창이 필요한 프로그램 → Python(tkinter 등) 또는 C#(WinForms/WPF). 도구마다 이유를 README에 한 줄 남긴다.
+- 브라우저 동작 바꾸기 → 유저스크립트(`.user.js`, Tampermonkey). 시스템을 바꾸지 않으므로 `install.ps1`은 만들지 않는다.
 - 외부 라이브러리는 꼭 필요할 때만 쓴다. Python이면 도구 폴더에 `requirements.txt`를 둔다.
 
 ## 작업 방식
@@ -27,6 +28,7 @@
 
 ## 하지 말 것
 - 이 폴더 밖의 파일은 셸 명령(cp, mv, Remove-Item 등)으로도 수정하거나 삭제하지 않는다. 읽기는 괜찮다. (Edit/Write는 훅이 막지만 셸 명령은 못 막는다)
+- 저장소가 public이다. 개인정보, 토큰, 개인 경로가 담긴 설정은 커밋하지 않는다.
 
 <!-- 이 파일은 60줄 이하를 목표로 한다. 같은 실수가 두 번 나올 때만 한 줄씩 추가.
      절차 → .claude/skills/, 폴더 한정 규칙 → .claude/rules/ (paths 필수), 절대 금지 → hooks -->
