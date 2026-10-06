@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         다시보기 책갈피 (숲·치지직)
 // @namespace    https://github.com/sinwa3/pc-toolbox
-// @version      0.1.2
+// @version      0.1.3
 // @author       sinwa
 // @description  숲·치지직 다시보기에 시간 책갈피(메모 포함, 영상당 5개)를 남기고, 어느 화면에서든 책갈피한 영상 목록을 열어 그 시간으로 바로 간다.
 // @match        https://chzzk.naver.com/*
@@ -246,10 +246,8 @@
       color: #ffc94d; background: rgba(20, 20, 20, .8); border: 1px solid rgba(255,255,255,.2); border-radius: 50%;
       cursor: pointer; opacity: .55; box-shadow: 0 2px 6px rgba(0,0,0,.3);
     }
-    #vbm-fab:hover { opacity: 1; }
-    #vbm-fab.fs { opacity: 0; transition: opacity .2s; }
-    #vbm-fab.fs:hover { opacity: .55; }
-    #vbm-fab.on, #vbm-fab.fs.on { opacity: 1; }
+    #vbm-fab:hover, #vbm-fab.on { opacity: 1; }
+    #vbm-fab.covered { display: none; }
     #vbm-list {
       position: fixed; left: 12px; bottom: 56px; z-index: 2147483000;
       width: min(380px, calc(100vw - 24px)); max-height: 65vh; display: none; flex-direction: column;
@@ -299,11 +297,12 @@
 
   const memoInput = el('input', { type: 'text', placeholder: '메모 (Enter로 추가)', maxLength: 100 });
   const addBtn = el('button', { type: 'button', className: 'vbm-add', title: '지금 시간을 책갈피로', textContent: '+ 지금' });
+  const listBtn = el('button', { type: 'button', className: 'vbm-icon', title: '책갈피 영상 전체 목록', textContent: '☰' });
   const closeBtn = el('button', { type: 'button', className: 'vbm-icon', title: '닫기 (B)', textContent: '✕' });
   const status = el('div', { className: 'vbm-status' });
   const marksBox = el('div', { className: 'vbm-marks' });
   const panel = el('div', { id: 'vbm-panel' }, [
-    el('div', { className: 'vbm-head' }, [memoInput, addBtn, closeBtn]),
+    el('div', { className: 'vbm-head' }, [memoInput, addBtn, listBtn, closeBtn]),
     status,
     marksBox,
   ]);
@@ -356,6 +355,7 @@
     if (e.key === 'Enter' && !e.isComposing) addMark(memoInput.value.trim());
     if (e.key === 'Escape') memoInput.blur();
   });
+  listBtn.addEventListener('click', () => setListOpen(!list.classList.contains('open')));
   closeBtn.addEventListener('click', () => setPanelOpen(false));
 
   // 재생바 오른쪽 버튼 묶음 맨 앞에 버튼을 붙인다. 플레이어가 다시 그려지면 다시 붙인다.
@@ -391,15 +391,23 @@
   const fab = el('button', { type: 'button', id: 'vbm-fab', title: '책갈피 영상', innerHTML: ICON });
   document.body.append(list, fab);
 
-  // 전체화면(플레이어 전체화면, F11 둘 다)에서는 영상을 가리지 않게 숨기고, 마우스를 올리면 다시 보인다
-  const fsQuery = matchMedia('(display-mode: fullscreen)');
+  // 넓은 화면·전체화면처럼 플레이어가 왼쪽 아래 구석까지 덮으면 재생바 버튼을 가리므로 숨긴다.
+  // 다시보기에서는 패널의 ☰ 버튼으로 목록을 연다.
+  const FAB_MARGIN = 16;
   const updateFab = () => {
-    const fs = !!document.fullscreenElement || fsQuery.matches || (innerWidth >= screen.width && innerHeight >= screen.height);
-    fab.classList.toggle('fs', fs);
+    const x1 = 12 - FAB_MARGIN;
+    const x2 = 12 + 36 + FAB_MARGIN;
+    const y1 = innerHeight - 12 - 36 - FAB_MARGIN;
+    const y2 = innerHeight - 12 + FAB_MARGIN;
+    const covered = [...document.querySelectorAll('video')].some((v) => {
+      const r = v.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && r.left < x2 && r.right > x1 && r.top < y2 && r.bottom > y1;
+    });
+    fab.classList.toggle('covered', covered);
   };
-  document.addEventListener('fullscreenchange', updateFab);
   addEventListener('resize', updateFab);
-  updateFab();
+  addEventListener('scroll', updateFab, { passive: true });
+  document.addEventListener('fullscreenchange', updateFab);
 
   const renderList = () => {
     if (!list.classList.contains('open')) return;
@@ -434,7 +442,16 @@
     }
   };
 
+  // 전체화면 중에는 전체화면 요소 안에 있어야 보인다
+  const attachList = () => {
+    const fs = document.fullscreenElement;
+    const host = fs && fs.tagName !== 'VIDEO' ? fs : document.body;
+    if (list.parentElement !== host) host.appendChild(list);
+  };
+  document.addEventListener('fullscreenchange', attachList);
+
   const setListOpen = (open) => {
+    if (open) attachList();
     list.classList.toggle('open', open);
     fab.classList.toggle('on', open);
     renderList();
@@ -463,6 +480,7 @@
   };
   let lastHref = location.href;
   setInterval(() => {
+    updateFab();
     if (location.href === lastHref) return;
     lastHref = location.href;
     onRoute();
