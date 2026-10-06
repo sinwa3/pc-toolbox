@@ -23,8 +23,7 @@
 
 ## 설치
 
-1. Tampermonkey가 설치된 브라우저에서 아래 raw 링크를 연다.
-   `https://raw.githubusercontent.com/sinwa3/pc-toolbox/main/tools/vod-bookmark/vod-bookmark.user.js`
+1. Tampermonkey가 설치된 브라우저에서 **[여기를 눌러 설치](https://raw.githubusercontent.com/sinwa3/pc-toolbox/main/tools/vod-bookmark/vod-bookmark.user.js)** (raw 링크가 열린다)
 2. Tampermonkey 설치 화면에서 "설치"를 누른다.
 
 push 전이라면 Tampermonkey 대시보드 → 새 스크립트 → `vod-bookmark.user.js` 내용 전체를 붙여넣고 저장한다.
