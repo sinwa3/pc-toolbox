@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# .NET
+[Bb]in/
+[Oo]bj/
+*.user
+.vs/
+
+# Node
+node_modules/
+
+# 빌드 결과물
+dist/
+build/
+*.spec
+
+# OS / 에디터
+Thumbs.db
+desktop.ini
+.vscode/
+
+# Claude 개인 메모
+CLAUDE.local.md
+.claude/settings.local.json
