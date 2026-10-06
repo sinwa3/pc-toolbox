@@ -4,7 +4,7 @@
 
 ## 지금 위치 / 다음 할 일
 
-**soop-timeline v0.1.2 배포됨.** 사용자가 Firefox/Brave에서 써 보며 피드백 주는 단계
+**soop-timeline v0.1.3 배포됨.** 사용자가 Firefox/Brave에서 써 보며 피드백 주는 단계
 - 아직 확인 못 한 것: 전체화면에서 패널 표시, Firefox 동작 (알려진 문제 참고)
 - 다음 도구는 미정. 만들기 전에 Greasy Fork 등에 이미 있는 것부터 찾아 비교한다
 
