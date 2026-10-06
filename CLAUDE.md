@@ -9,7 +9,10 @@
 ## 구조
 - 도구 하나 = `tools/<도구이름>/` 폴더 하나. 폴더 안에 `README.md`(용도, 실행 방법, 설치·제거 방법)를 둔다.
 - 새 도구를 만들면 루트 `README.md` 목록에 한 줄 추가.
-- 공유하지 않을 도구는 `private/tools/<이름>/`에 둔다. `private/`는 공개 저장소에서 `.gitignore`로 빠지고, 안에 별도 비공개 저장소(`sinwa3/pc-toolbox-private`)가 있다. 목록은 `private/README.md`에 적고 루트 README에는 적지 않는다. 새 도구를 만들 때 공개/비공개를 먼저 묻는다.
+- 공유하지 않을 도구는 `private/tools/<이름>/`에 둔다. `private/`는 공개 저장소에서 `.gitignore`로 빠지고, 안에 별도 비공개 저장소(`sinwa3/pc-toolbox-private`)가 있다. 목록은 `private/README.md`에 적고 루트 README에는 적지 않는다.
+- 새 도구(프로그램·스크립트)를 만들 때: 사용자가 처음에 공개/비공개를 말하면 그에 맞춰 만든다. 말하지 않았으면 다른 작업보다 먼저 묻는다.
+  - 공개 → `tools/<이름>/`, 루트 `README.md` 목록, 상위 저장소(pc-toolbox)에 커밋. 유저스크립트는 raw 설치·`@updateURL` 자동 업데이트.
+  - 비공개 → `private/tools/<이름>/`, `private/README.md` 목록, `private/` 안의 비공개 저장소에 커밋(`git -C private ...`). 유저스크립트는 `@updateURL`/`@downloadURL` 없이 직접 붙여 넣어 설치. 진행 상황은 `docs/progress.md`에 도구 이름 정도만 적고 세부 내용은 `private/` 안 문서에 둔다.
 
 ## 언어 고르는 기준
 - 바로가기, 파일 정리, 간단한 자동화 → PowerShell(.ps1) 또는 배치(.bat)
