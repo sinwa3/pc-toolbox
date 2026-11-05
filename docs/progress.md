@@ -1,10 +1,10 @@
 # 진행 상황
 
-마지막 갱신: 2026-11-05
+마지막 갱신: 2026-11-06
 
 ## 지금 위치 / 다음 할 일
 
-**다음: 정해진 작업 없음.** 새 도구를 정하거나 배포한 도구의 피드백을 기다린다. kone-secure-decoder(비공개)는 v0.1.2 사용자 설치 확인 완료. 비공개 도구 file-organizer는 A·B·C 모두 완료(세부는 `private/docs/progress.md`). secure-encoder는 다른 프로젝트(웹사이트 모음)로 옮겼다.
+**다음: kone-secure-decoder(비공개) v0.1.3 사용자 확인.** 세부는 `private/docs/progress.md`. 그 밖에는 새 도구를 정하거나 배포한 도구의 피드백을 기다린다. 비공개 도구 file-organizer는 A·B·C 모두 완료(세부는 `private/docs/progress.md`). secure-encoder는 다른 프로젝트(웹사이트 모음)로 옮겼다.
 - vod-bookmark v0.1.3 배포됨(사용자가 치지직·숲에서 확인 완료, 넓은 화면 겹침 문제 해결 확인). 피드백이 오면 수정.
 - soop-timeline v0.1.3 배포됨(`@author` 표시 확인). 피드백 대기 중. 아직 확인 못 한 것: 전체화면에서 패널 표시, Firefox 동작 (알려진 문제 참고)
 
