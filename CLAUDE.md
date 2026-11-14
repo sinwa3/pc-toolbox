@@ -4,7 +4,7 @@
 
 ## 환경
 - Windows 11, 기본 셸은 Windows PowerShell 5.1
-- 설치된 것: Python 3.14, .NET 9, Node 24, git
+- 설치된 것: Python 3.14, .NET 9, Node 24, git, Rust 1.100(rustup, MSVC — VS 2022 C++ 빌드 도구 사용)
 
 ## 구조
 - 도구 하나 = `tools/<도구이름>/` 폴더 하나. 폴더 안에 `README.md`(용도, 실행 방법, 설치·제거 방법)를 둔다.
@@ -16,7 +16,7 @@
 
 ## 언어 고르는 기준
 - 바로가기, 파일 정리, 간단한 자동화 → PowerShell(.ps1) 또는 배치(.bat)
-- 창이 필요한 프로그램 → Python(tkinter 등) 또는 C#(WinForms/WPF). 도구마다 이유를 README에 한 줄 남긴다.
+- 창이 필요한 프로그램 → Python(tkinter 등), C#(WinForms/WPF) 또는 Rust(egui). 도구마다 이유를 README에 한 줄 남긴다. Rust는 `cargo build --release`로 exe 하나를 만들고, `target/`은 커밋하지 않는다.
 - 브라우저 동작 바꾸기 → 유저스크립트(`.user.js`, Tampermonkey). 시스템을 바꾸지 않으므로 `install.ps1`은 만들지 않는다.
 - 외부 라이브러리는 꼭 필요할 때만 쓴다. Python이면 도구 폴더에 `requirements.txt`를 둔다.
 

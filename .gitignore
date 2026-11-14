@@ -13,6 +13,9 @@ venv/
 # Node
 node_modules/
 
+# Rust
+target/
+
 # 빌드 결과물
 dist/
 build/
