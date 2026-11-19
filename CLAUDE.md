@@ -12,7 +12,7 @@
 - 공유하지 않을 도구는 `private/tools/<이름>/`에 둔다. `private/`는 공개 저장소에서 `.gitignore`로 빠지고, 안에 별도 비공개 저장소(`sinwa3/pc-toolbox-private`)가 있다. 목록은 `private/README.md`에 적고 루트 README에는 적지 않는다.
 - 새 도구(프로그램·스크립트)를 만들 때: 사용자가 처음에 공개/비공개를 말하면 그에 맞춰 만든다. 말하지 않았으면 다른 작업보다 먼저 묻는다.
   - 공개 → `tools/<이름>/`, 루트 `README.md` 목록, 상위 저장소(pc-toolbox)에 커밋. 유저스크립트는 raw 설치·`@updateURL` 자동 업데이트.
-  - 비공개 → `private/tools/<이름>/`, `private/README.md` 목록, `private/` 안의 비공개 저장소에 커밋(`git -C private ...`). 유저스크립트는 `@updateURL`/`@downloadURL` 없이 직접 붙여 넣어 설치(한 번 클릭 설치가 필요하면 코드에 토큰·비밀번호가 없을 때만 비밀 Gist를 쓰고, 링크는 공개 저장소에 적지 않는다). 진행 상황은 `docs/progress.md`에 도구 이름 정도만 적고 세부 내용은 `private/` 안 문서에 둔다.
+  - 비공개 → `private/tools/<이름>/`, `private/README.md` 목록, `private/` 안의 비공개 저장소에 커밋(`git -C private ...`). 유저스크립트는 `@updateURL`/`@downloadURL` 없이 직접 붙여 넣어 설치(한 번 클릭 설치가 필요하면 코드에 토큰·비밀번호가 없을 때만 비밀 Gist를 쓰고, 링크는 공개 저장소에 적지 않는다). 진행·설계 세부는 `private/docs/progress.md`에 둔다.
 
 ## 언어 고르는 기준
 - 바로가기, 파일 정리, 간단한 자동화 → PowerShell(.ps1) 또는 배치(.bat)
@@ -25,16 +25,19 @@
 - 시작프로그램 등록, 단축키 등록, 작업 스케줄러, 레지스트리, 환경변수처럼 시스템을 바꾸는 작업은 Claude가 직접 실행하지 않는다. 사용자가 실행할 `install.ps1`과 `uninstall.ps1`을 도구 폴더에 만들어 준다.
 
 ## 문서 지도
-- 지금 위치, 다음 할 일, 마일스톤 → `docs/progress.md` (쌓이는 기록)
-- 설계 결정과 이유 → `docs/design.md` (도구를 고치거나 비슷한 결정을 할 때 읽는다)
-- 미정 사항, 알려진 문제 → `docs/backlog.md` (도구를 고치거나 피드백을 받을 때 읽는다)
+작업 기록 문서는 공개 저장소에 올리지 않고 `private/docs/`(비공개 저장소)에 둔다. 공개 저장소에는 도구 README와 규칙만 있다.
+- 지금 위치, 다음 할 일, 마일스톤 → `private/docs/main/progress.md` (쌓이는 기록)
+- 설계 결정과 이유 → `private/docs/main/design.md` (도구를 고치거나 비슷한 결정을 할 때 읽는다)
+- 미정 사항, 알려진 문제 → `private/docs/main/backlog.md` (도구를 고치거나 피드백을 받을 때 읽는다)
 - 도구별 사용법 → `tools/<이름>/README.md`, 도구 목록 → 루트 `README.md`
 
-@docs/progress.md
+@private/docs/main/progress.md
 
-- 비공개 도구의 진행·설계·미정·알려진 문제 → `private/docs/progress.md` (공개 쪽에는 도구 이름과 단계만)
+- 비공개 도구의 진행·설계·미정·알려진 문제 → `private/docs/progress.md`
 
 @private/docs/progress.md
+
+- 문서는 `private/` 안의 비공개 저장소에 커밋한다(`git -C private ...`). 공개 저장소에 `docs/`를 다시 만들지 않는다(`.gitignore`로 막아 둠).
 
 ## 하지 말 것
 - 이 폴더 밖의 파일은 셸 명령(cp, mv, Remove-Item 등)으로도 수정하거나 삭제하지 않는다. 읽기는 괜찮다. (Edit/Write는 훅이 막지만 셸 명령은 못 막는다)

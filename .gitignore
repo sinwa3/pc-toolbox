@@ -29,6 +29,9 @@ desktop.ini
 # 비공개 도구 (별도 비공개 저장소 pc-toolbox-private)
 private/
 
+# 작업 기록 문서는 private/docs/에 둔다
+/docs/
+
 # Claude 개인 메모
 CLAUDE.local.md
 .claude/settings.local.json
