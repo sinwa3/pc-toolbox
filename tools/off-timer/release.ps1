@@ -43,8 +43,12 @@ try {
     if ($NoticesOnly) { return }
 
     Write-Host "3/3 GitHub 릴리즈 $tag ..."
+    # 릴리즈가 없으면 gh가 stderr에 쓰는데, 5.1은 Stop 상태에서 이를 오류로 멈추므로 잠시 풀어 둔다.
+    $ErrorActionPreference = "Continue"
     gh release view $tag --repo $repo *> $null
-    if ($LASTEXITCODE -eq 0) {
+    $exists = $LASTEXITCODE -eq 0
+    $ErrorActionPreference = "Stop"
+    if ($exists) {
         gh release upload $tag $exe $notices --repo $repo --clobber
     } else {
         $notesArgs = if ($NotesFile) { @("--notes-file", $NotesFile) } else { @("--notes", "끄기 타이머 v$Version. 사용법: https://github.com/$repo/blob/main/tools/off-timer/README.md") }
