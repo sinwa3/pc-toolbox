@@ -1,6 +1,6 @@
 [package]
 name = "off-timer"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "프로그램과 PC를 정한 시간 뒤에 끄는 타이머"
 license = "MIT"
@@ -10,6 +10,8 @@ eframe = { version = "0.37.0", default-features = false, features = ["glow", "de
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_Power",
     "Win32_System_SystemInformation",

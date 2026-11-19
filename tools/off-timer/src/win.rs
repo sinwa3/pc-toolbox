@@ -4,8 +4,12 @@ use std::collections::BTreeMap;
 use std::os::windows::process::CommandExt;
 use std::process::Command;
 
-use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, WPARAM};
+use windows::Win32::Foundation::{CloseHandle, FILETIME, HWND, LPARAM, NO_ERROR, WPARAM};
 use windows::Win32::Graphics::Dwm::{DWMWA_CLOAKED, DwmGetWindowAttribute};
+use windows::Win32::NetworkManagement::IpHelper::{
+    FreeMibTable, GetIfTable2, IF_TYPE_SOFTWARE_LOOPBACK, MIB_IF_ROW2, MIB_IF_TABLE2,
+};
+use windows::Win32::NetworkManagement::Ndis::IfOperStatusUp;
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
 };
@@ -14,8 +18,8 @@ use windows::Win32::System::Power::{
 };
 use windows::Win32::System::SystemInformation::GetLocalTime;
 use windows::Win32::System::Threading::{
-    OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
-    QueryFullProcessImageNameW, TerminateProcess,
+    GetSystemTimes, OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+    PROCESS_TERMINATE, QueryFullProcessImageNameW, TerminateProcess,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GW_OWNER, GWL_EXSTYLE, GetWindow, GetWindowLongPtrW, GetWindowTextW,
@@ -226,6 +230,45 @@ pub fn keep_awake(on: bool) {
         let flags = if on { ES_CONTINUOUS | ES_SYSTEM_REQUIRED } else { ES_CONTINUOUS };
         SetThreadExecutionState(flags);
     }
+}
+
+/// 지금까지 받은 바이트 수의 합(켜져 있는 실제 네트워크 장치만).
+/// 필터·가상 장치는 같은 데이터를 한 번 더 세므로 빼고, 실제 장치가 없으면 루프백만 뺀다.
+pub fn net_recv_bytes() -> Option<u64> {
+    unsafe {
+        let mut table: *mut MIB_IF_TABLE2 = std::ptr::null_mut();
+        if GetIfTable2(&mut table) != NO_ERROR || table.is_null() {
+            return None;
+        }
+        let n = (*table).NumEntries as usize;
+        let rows: &[MIB_IF_ROW2] = std::slice::from_raw_parts((*table).Table.as_ptr(), n);
+        let up = |r: &&MIB_IF_ROW2| r.OperStatus == IfOperStatusUp && r.Type != IF_TYPE_SOFTWARE_LOOPBACK;
+        // 비트 0: 실제 장치(HardwareInterface), 비트 1: 필터(FilterInterface)
+        let hw = |r: &&MIB_IF_ROW2| {
+            let f = r.InterfaceAndOperStatusFlags._bitfield;
+            f & 0b01 != 0 && f & 0b10 == 0
+        };
+        let mut sum: u64 = rows.iter().filter(up).filter(hw).map(|r| r.InOctets).sum();
+        if !rows.iter().filter(up).any(|r| hw(&r)) {
+            sum = rows
+                .iter()
+                .filter(up)
+                .filter(|r| r.InterfaceAndOperStatusFlags._bitfield & 0b10 == 0)
+                .map(|r| r.InOctets)
+                .sum();
+        }
+        FreeMibTable(table as *const _);
+        Some(sum)
+    }
+}
+
+/// CPU 누적 시간 (쉰 시간, 전체 시간). 100ns 단위. 두 번 읽은 차이로 사용률을 낸다.
+pub fn cpu_times() -> Option<(u64, u64)> {
+    let ft = |f: FILETIME| (f.dwHighDateTime as u64) << 32 | f.dwLowDateTime as u64;
+    let (mut idle, mut kernel, mut user) = (FILETIME::default(), FILETIME::default(), FILETIME::default());
+    unsafe { GetSystemTimes(Some(&mut idle), Some(&mut kernel), Some(&mut user)).ok()? };
+    // 커널 시간에는 쉰 시간이 들어 있다.
+    Some((ft(idle), ft(kernel) + ft(user)))
 }
 
 /// 지금 지역 시각을 자정부터의 초로.

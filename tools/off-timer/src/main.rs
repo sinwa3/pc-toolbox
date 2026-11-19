@@ -1,9 +1,10 @@
 #![windows_subsystem = "windows"]
-//! 끄기 타이머: 고른 프로그램과 PC를 정한 시간 뒤에 끈다.
+//! 끄기 타이머: 고른 프로그램과 PC를 정한 시간 뒤에(또는 조건이 되면) 끈다.
 
 mod win;
 
-use std::time::{Duration, SystemTime};
+use std::collections::VecDeque;
+use std::time::{Duration, Instant, SystemTime};
 
 use eframe::egui::{
     self, Align, Button, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, Frame,
@@ -20,12 +21,16 @@ const WARN_SECS: u64 = 60;
 const SNOOZE_SECS: u64 = 10 * 60;
 /// 빠른 버튼(분).
 const QUICK: [(&str, u64); 3] = [("30분", 30), ("1시간", 60), ("2시간", 120)];
+/// 조건 끄기에서 받는 속도·CPU 사용률을 평균 내는 구간(초). 잠깐 튀는 값에 흔들리지 않게 한다.
+const AVG_SECS: f64 = 10.0;
+/// 조건 끄기 "프로그램이 꺼지면"에서 사라진 뒤 다시 확인하는 시간(스스로 다시 켜지는 설치 프로그램 대비).
+const GONE_SECS: u64 = 5;
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: ViewportBuilder::default()
             .with_title("끄기 타이머")
-            .with_inner_size([520.0, 660.0])
+            .with_inner_size([520.0, 760.0])
             .with_min_inner_size([440.0, 560.0])
             .with_icon(egui::IconData {
                 rgba: include_bytes!("../assets/icon-64.rgba").to_vec(),
@@ -170,6 +175,169 @@ fn secs_until(deadline: SystemTime, now: SystemTime) -> u64 {
     deadline.duration_since(now).map(|d| d.as_secs_f64().ceil() as u64).unwrap_or(0)
 }
 
+fn secs_since(since: SystemTime, now: SystemTime) -> u64 {
+    now.duration_since(since).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// 바이트/초 → "820KB/s", "3.2MB/s"
+fn fmt_rate(bps: f64) -> String {
+    let kb = bps / 1024.0;
+    if kb < 1000.0 { format!("{kb:.0}KB/s") } else { format!("{:.1}MB/s", kb / 1024.0) }
+}
+
+/// 프로그램 이름 입력 → 실행 파일 이름("ffmpeg" → "ffmpeg.exe").
+fn exe_input(s: &str) -> String {
+    let s = s.trim();
+    if s.is_empty() || s.contains('.') { s.to_string() } else { format!("{s}.exe") }
+}
+
+/// 숫자 입력칸 값 → 범위 안의 숫자.
+fn parse_num(s: &str, min: f64, max: f64, what: &str) -> Result<f64, String> {
+    match s.trim().parse::<f64>() {
+        Ok(v) if v.is_finite() && v >= min && v <= max => Ok(v),
+        _ => Err(format!("{what}은(는) {min} ~ {max} 사이 숫자로 넣어 주세요")),
+    }
+}
+
+// ---------- 조건 끄기 ----------
+
+/// 받는 속도·CPU 사용률을 1초마다 읽어 최근 AVG_SECS초 평균을 낸다.
+struct Sampler {
+    samples: VecDeque<(Instant, Option<u64>, Option<(u64, u64)>)>,
+}
+
+impl Sampler {
+    fn new() -> Self {
+        let mut s = Self { samples: VecDeque::new() };
+        s.tick();
+        s
+    }
+
+    /// 1초가 지났으면 새로 읽는다. 새로 읽었으면 true.
+    fn tick(&mut self) -> bool {
+        let now = Instant::now();
+        if self.samples.back().is_some_and(|(t, ..)| now.duration_since(*t) < Duration::from_secs(1)) {
+            return false;
+        }
+        self.samples.push_back((now, win::net_recv_bytes(), win::cpu_times()));
+        // 평균 구간보다 오래된 표본은 기준점 하나만 남긴다.
+        while self.samples.len() > 2 && now.duration_since(self.samples[1].0).as_secs_f64() >= AVG_SECS {
+            self.samples.pop_front();
+        }
+        true
+    }
+
+    fn ends(&self) -> Option<(&(Instant, Option<u64>, Option<(u64, u64)>), &(Instant, Option<u64>, Option<(u64, u64)>))> {
+        let (a, b) = (self.samples.front()?, self.samples.back()?);
+        (b.0.duration_since(a.0).as_secs_f64() >= 0.9).then_some((a, b))
+    }
+
+    /// 최근 받는 속도(바이트/초).
+    fn net_bps(&self) -> Option<f64> {
+        let (a, b) = self.ends()?;
+        let dt = b.0.duration_since(a.0).as_secs_f64();
+        Some(b.1?.saturating_sub(a.1?) as f64 / dt)
+    }
+
+    /// 최근 CPU 사용률(%).
+    fn cpu_pct(&self) -> Option<f64> {
+        let (a, b) = self.ends()?;
+        let ((i0, t0), (i1, t1)) = (a.2?, b.2?);
+        let total = t1.saturating_sub(t0);
+        if total == 0 {
+            return None;
+        }
+        let idle = i1.saturating_sub(i0).min(total);
+        Some(100.0 * (total - idle) as f64 / total as f64)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PcMode {
+    Time,
+    Cond,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Cond {
+    Net,
+    Cpu,
+    Exit,
+}
+
+impl Cond {
+    const ALL: [Cond; 3] = [Self::Net, Self::Cpu, Self::Exit];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Net => "다운로드가 끝나면",
+            Self::Cpu => "CPU가 한가해지면",
+            Self::Exit => "프로그램이 꺼지면",
+        }
+    }
+}
+
+/// 돌고 있는 조건 하나.
+struct CondRun {
+    cond: Cond,
+    /// 바이트/초(Net) 또는 %(Cpu). 이보다 낮으면 조용하다고 본다.
+    limit: f64,
+    quiet_secs: u64,
+    exe: String,
+    /// 기준을 한 번 넘었는지. "넘은 뒤부터 세기"를 끄면 처음부터 true.
+    busy_seen: bool,
+    quiet_since: Option<SystemTime>,
+    /// "10분 미루기"를 눌렀으면 이때까지는 경고하지 않는다.
+    hold_until: Option<SystemTime>,
+}
+
+impl CondRun {
+    /// 지금 값(Net·Cpu). 아직 평균을 낼 표본이 모자라면 None.
+    fn value(&self, s: &Sampler) -> Option<f64> {
+        match self.cond {
+            Cond::Net => s.net_bps(),
+            Cond::Cpu => s.cpu_pct(),
+            Cond::Exit => None,
+        }
+    }
+
+    fn need_secs(&self) -> u64 {
+        if self.cond == Cond::Exit { GONE_SECS } else { self.quiet_secs }
+    }
+
+    /// 1초마다 부른다. 경고로 넘어갈 때가 되면 true.
+    fn check(&mut self, now: SystemTime, s: &Sampler) -> bool {
+        let quiet = match self.cond {
+            Cond::Exit => win::pids_of(&self.exe).is_empty(),
+            _ => match self.value(s) {
+                Some(v) => v < self.limit,
+                None => return false,
+            },
+        };
+        if !quiet {
+            self.busy_seen = true;
+            self.quiet_since = None;
+            return false;
+        }
+        if !self.busy_seen {
+            return false;
+        }
+        let since = *self.quiet_since.get_or_insert(now);
+        let held = self.hold_until.is_some_and(|h| now < h);
+        !held && secs_since(since, now) >= self.need_secs()
+    }
+
+    /// 경고 창에 보여 줄 이유.
+    fn reason(&self) -> String {
+        let min = self.quiet_secs / 60;
+        match self.cond {
+            Cond::Net => format!("받는 속도가 {min}분 동안 낮았어요"),
+            Cond::Cpu => format!("CPU 사용률이 {min}분 동안 낮았어요"),
+            Cond::Exit => format!("{}가 꺼졌어요", self.exe),
+        }
+    }
+}
+
 // ---------- 상태 ----------
 
 enum ProgState {
@@ -196,8 +364,11 @@ impl ProgTimer {
 struct PcRun {
     action: PcAction,
     force: bool,
+    /// 시간 끄기의 마감, 또는 (조건 끄기에서) 경고가 끝나는 시각.
     deadline: SystemTime,
     warning: bool,
+    /// 조건 끄기면 Some. 경고 전까지는 deadline을 쓰지 않는다.
+    cond: Option<CondRun>,
 }
 
 struct OffTimer {
@@ -212,10 +383,21 @@ struct OffTimer {
     next_id: u64,
 
     pc_action: PcAction,
+    pc_mode: PcMode,
     pc_when: String,
     pc_force: bool,
     pc: Option<PcRun>,
     pc_msg: Option<String>,
+
+    cond: Cond,
+    cond_net_kb: String,
+    cond_cpu_pct: String,
+    cond_quiet_min: String,
+    cond_wait_busy: bool,
+    cond_exe: String,
+    /// 조건 입력칸의 프로그램이 지금 몇 개 떠 있는지(1초마다 갱신).
+    cond_exe_count: usize,
+    sampler: Sampler,
 
     confirm_exit: bool,
     allow_exit: bool,
@@ -236,10 +418,19 @@ impl OffTimer {
             timers: Vec::new(),
             next_id: 1,
             pc_action: PcAction::Shutdown,
+            pc_mode: PcMode::Time,
             pc_when: "120".into(),
             pc_force: false,
             pc: None,
             pc_msg: None,
+            cond: Cond::Net,
+            cond_net_kb: "100".into(),
+            cond_cpu_pct: "10".into(),
+            cond_quiet_min: "5".into(),
+            cond_wait_busy: true,
+            cond_exe: String::new(),
+            cond_exe_count: 0,
+            sampler: Sampler::new(),
             confirm_exit: false,
             allow_exit: false,
             awake: false,
@@ -283,9 +474,16 @@ impl OffTimer {
         }
     }
 
-    fn tick_pc(&mut self, now: SystemTime) {
+    fn tick_pc(&mut self, now: SystemTime, fresh: bool) {
         let Some(run) = &mut self.pc else { return };
         if !run.warning {
+            if let Some(c) = &mut run.cond {
+                if fresh && c.check(now, &self.sampler) {
+                    run.warning = true;
+                    run.deadline = now + Duration::from_secs(WARN_SECS);
+                }
+                return;
+            }
             if secs_until(run.deadline, now) <= WARN_SECS {
                 run.warning = true;
                 // 절전 등으로 시간을 건너뛰어 이미 지났으면 경고 시간을 새로 준다.
@@ -314,8 +512,12 @@ fn force_result(exe: &str) -> ProgState {
 impl eframe::App for OffTimer {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let now = SystemTime::now();
+        let fresh = self.sampler.tick();
+        if fresh && self.pc_mode == PcMode::Cond && self.cond == Cond::Exit {
+            self.cond_exe_count = win::pids_of(&exe_input(&self.cond_exe)).len();
+        }
         self.tick_programs(now);
-        self.tick_pc(now);
+        self.tick_pc(now, fresh);
 
         let active = self.any_active();
         if active != self.awake {
@@ -562,20 +764,16 @@ impl OffTimer {
         ui.label(bold("PC 끄기", 17.0));
         let now = SystemTime::now();
 
-        if let Some(run) = &self.pc {
-            let left = secs_until(run.deadline, now);
-            ui.horizontal(|ui| {
-                ui.label(bold(fmt_left(left), 34.0));
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui.button("취소").clicked() {
-                        self.pc = None;
-                    }
-                });
-            });
-            if let Some(run) = &self.pc {
-                ui.label(RichText::new(format!("{}에 {}", clock_after(left), run.action.label())).weak());
-            }
+        if self.pc.is_some() {
+            self.pc_running_ui(ui, now);
         } else {
+            ui.horizontal(|ui| {
+                for (m, label) in [(PcMode::Time, "시간 뒤에"), (PcMode::Cond, "조건이 되면")] {
+                    if ui.add(Button::new(label).selected(self.pc_mode == m)).clicked() {
+                        self.pc_mode = m;
+                    }
+                }
+            });
             ui.horizontal(|ui| {
                 for a in PcAction::ALL {
                     if ui.add(Button::new(a.label()).selected(self.pc_action == a)).clicked() {
@@ -589,19 +787,24 @@ impl OffTimer {
                 PcAction::Sleep => "절전에 들어가요",
                 PcAction::Hibernate => "최대 절전에 들어가요",
             };
-            let secs = when_ui(ui, &mut self.pc_when, verb);
+            // 시작했을 때 만들 것: (마감까지 초, 조건)
+            let ready: Option<(u64, Option<CondRun>)> = match self.pc_mode {
+                PcMode::Time => when_ui(ui, &mut self.pc_when, verb).map(|s| (s, None)),
+                PcMode::Cond => self.cond_ui(ui).map(|c| (0, Some(c))),
+            };
             ui.horizontal(|ui| {
                 if self.pc_action.can_force() {
                     ui.checkbox(&mut self.pc_force, "저장 안 된 프로그램이 있어도 끄기");
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if primary(ui, "시작").clicked() {
-                        if let Some(secs) = secs {
+                        if let Some((secs, cond)) = ready {
                             self.pc = Some(PcRun {
                                 action: self.pc_action,
                                 force: self.pc_force && self.pc_action.can_force(),
                                 deadline: SystemTime::now() + Duration::from_secs(secs),
                                 warning: false,
+                                cond,
                             });
                             self.pc_msg = None;
                         }
@@ -609,9 +812,190 @@ impl OffTimer {
                 });
             });
         }
-        ui.label(RichText::new(format!("{WARN_SECS}초 전에 경고 창이 떠요. 타이머가 도는 동안은 PC가 저절로 절전에 들어가지 않아요.")).weak().small());
+        let cond_mode = match &self.pc {
+            Some(run) => run.cond.is_some(),
+            None => self.pc_mode == PcMode::Cond,
+        };
+        let note = if cond_mode {
+            format!("조건이 맞으면 {WARN_SECS}초 동안 경고 창을 띄운 뒤에 실행해요. 기다리는 동안은 PC가 저절로 절전에 들어가지 않아요.")
+        } else {
+            format!("{WARN_SECS}초 전에 경고 창이 떠요. 타이머가 도는 동안은 PC가 저절로 절전에 들어가지 않아요.")
+        };
+        ui.label(RichText::new(note).weak().small());
 
         msg_line(ui, &mut self.pc_msg);
+    }
+
+    /// PC 타이머가 돌고 있을 때: 남은 시간 또는 조건 상태 + 취소.
+    fn pc_running_ui(&mut self, ui: &mut egui::Ui, now: SystemTime) {
+        let Some(run) = &self.pc else { return };
+        let action = run.action.label();
+        let (big, small): (String, String) = match &run.cond {
+            None => {
+                let left = secs_until(run.deadline, now);
+                (fmt_left(left), format!("{}에 {action}", clock_after(left)))
+            }
+            Some(_) if run.warning => {
+                let left = secs_until(run.deadline, now);
+                (fmt_left(left), format!("조건이 맞아서 곧 {action}해요"))
+            }
+            Some(c) => {
+                let need = c.need_secs();
+                match (c.cond, c.busy_seen, c.quiet_since) {
+                    (Cond::Exit, _, None) => ("기다리는 중".into(), format!("{}가 꺼지면 {action}", c.exe)),
+                    (Cond::Exit, _, Some(_)) => ("확인 중".into(), format!("{}가 꺼졌어요. 다시 켜지지 않는지 보고 있어요", c.exe)),
+                    (_, false, _) => (
+                        "시작 기다리는 중".into(),
+                        "기준을 한 번 넘은 뒤부터 조용한 시간을 세요".into(),
+                    ),
+                    (_, true, None) => (
+                        if c.cond == Cond::Net { "받는 중".into() } else { "사용 중".into() },
+                        format!("기준보다 낮은 상태가 {}분 이어지면 {action}", need / 60),
+                    ),
+                    (_, true, Some(since)) => (
+                        fmt_left(need.saturating_sub(secs_since(since, now))),
+                        format!("이대로 조용하면 {action}"),
+                    ),
+                }
+            }
+        };
+        ui.horizontal(|ui| {
+            ui.label(bold(big, 34.0));
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui.button("취소").clicked() {
+                    self.pc = None;
+                }
+            });
+        });
+        ui.label(RichText::new(small).weak());
+        let Some(run) = &self.pc else { return };
+        if let Some(c) = &run.cond {
+            let current = match c.cond {
+                Cond::Net => c.value(&self.sampler).map(|v| format!("지금 받는 속도 {} · 기준 {} 미만", fmt_rate(v), fmt_rate(c.limit))),
+                Cond::Cpu => c.value(&self.sampler).map(|v| format!("지금 CPU {v:.0}% · 기준 {:.0}% 미만", c.limit)),
+                Cond::Exit => None,
+            };
+            if let Some(t) = current {
+                ui.label(RichText::new(t).weak());
+            }
+            if let Some(h) = c.hold_until.filter(|h| now < *h) {
+                ui.label(RichText::new(format!("미루는 중: {}까지는 실행하지 않아요", clock_after(secs_until(h, now)))).weak());
+            }
+        }
+    }
+
+    /// 조건 고르기와 기준값 입력. 올바르면 시작할 조건을 돌려준다.
+    fn cond_ui(&mut self, ui: &mut egui::Ui) -> Option<CondRun> {
+        ui.horizontal(|ui| {
+            for c in Cond::ALL {
+                if ui.add(Button::new(c.label()).selected(self.cond == c)).clicked() {
+                    self.cond = c;
+                    if c == Cond::Exit {
+                        self.cond_exe_count = win::pids_of(&exe_input(&self.cond_exe)).len();
+                    }
+                }
+            }
+        });
+        let num = |ui: &mut egui::Ui, v: &mut String| {
+            ui.add(TextEdit::singleline(v).desired_width(52.0).align(egui::Align2::CENTER_TOP));
+        };
+
+        let result: Result<CondRun, String> = match self.cond {
+            Cond::Net | Cond::Cpu => {
+                let net = self.cond == Cond::Net;
+                ui.horizontal(|ui| {
+                    ui.label(if net { "받는 속도가" } else { "CPU 사용률이" });
+                    num(ui, if net { &mut self.cond_net_kb } else { &mut self.cond_cpu_pct });
+                    ui.label(if net { "KB/s 미만으로" } else { "% 미만으로" });
+                    num(ui, &mut self.cond_quiet_min);
+                    ui.label("분 이어지면");
+                });
+                let now_txt = if net {
+                    self.sampler.net_bps().map(|v| format!("지금 받는 속도 {} (최근 10초 평균)", fmt_rate(v)))
+                } else {
+                    self.sampler.cpu_pct().map(|v| format!("지금 CPU {v:.0}% (최근 10초 평균)"))
+                };
+                ui.label(RichText::new(now_txt.unwrap_or_else(|| "지금 값을 읽는 중…".into())).weak());
+                ui.checkbox(
+                    &mut self.cond_wait_busy,
+                    if net { "받는 속도가 기준을 넘은 뒤부터 세기" } else { "사용률이 기준을 넘은 뒤부터 세기" },
+                )
+                .on_hover_text("다운로드·작업을 걸기 전에 시작해도 바로 꺼지지 않아요");
+                let limit = if net {
+                    parse_num(&self.cond_net_kb, 1.0, 1_000_000.0, "받는 속도").map(|v| v * 1024.0)
+                } else {
+                    parse_num(&self.cond_cpu_pct, 1.0, 99.0, "CPU 사용률")
+                };
+                let quiet = parse_num(&self.cond_quiet_min, 1.0, 180.0, "이어지는 시간");
+                limit.and_then(|limit| {
+                    quiet.map(|q| CondRun {
+                        cond: self.cond,
+                        limit,
+                        quiet_secs: q.round() as u64 * 60,
+                        exe: String::new(),
+                        busy_seen: !self.cond_wait_busy,
+                        quiet_since: None,
+                        hold_until: None,
+                    })
+                })
+            }
+            Cond::Exit => {
+                ui.horizontal(|ui| {
+                    ui.label("꺼지길 기다릴 프로그램");
+                    let names: Vec<String> = self.apps.iter().map(|a| a.exe.clone()).collect();
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.menu_button("목록에서", |ui| {
+                            ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
+                                if names.is_empty() {
+                                    ui.label(RichText::new("창이 떠 있는 프로그램이 없어요").weak());
+                                }
+                                for n in names {
+                                    if ui.button(&n).clicked() {
+                                        self.cond_exe_count = win::pids_of(&n).len();
+                                        self.cond_exe = n;
+                                        ui.close();
+                                    }
+                                }
+                            });
+                        });
+                        ui.add(
+                            TextEdit::singleline(&mut self.cond_exe)
+                                .hint_text("예: setup.exe")
+                                .desired_width(ui.available_width()),
+                        );
+                    });
+                });
+                ui.label(
+                    RichText::new("창 없이 도는 프로그램(ffmpeg 등)은 이름을 직접 넣어 주세요. 이름이 같은 프로세스가 모두 꺼져야 해요.")
+                        .weak()
+                        .small(),
+                );
+                let exe = exe_input(&self.cond_exe);
+                if exe.is_empty() {
+                    Err("프로그램 이름을 넣어 주세요".into())
+                } else if self.cond_exe_count == 0 {
+                    Err(format!("{exe}는 지금 실행 중이 아니에요"))
+                } else {
+                    ui.label(RichText::new(format!("{exe} 실행 중 (프로세스 {}개)", self.cond_exe_count)).weak());
+                    Ok(CondRun {
+                        cond: Cond::Exit,
+                        limit: 0.0,
+                        quiet_secs: GONE_SECS,
+                        exe,
+                        busy_seen: true,
+                        quiet_since: None,
+                        hold_until: None,
+                    })
+                }
+            }
+        };
+        match result {
+            Ok(c) => Some(c),
+            Err(e) => {
+                ui.label(RichText::new(e).color(warn_color(ui)));
+                None
+            }
+        }
     }
 
     fn warning_ui(&mut self, ctx: &egui::Context) {
@@ -626,11 +1010,15 @@ impl OffTimer {
             PcAction::Sleep => "PC가 절전에 들어가요",
             PcAction::Hibernate => "PC가 최대 절전에 들어가요",
         };
+        let reason = run.cond.as_ref().map(CondRun::reason);
         let (mut cancel, mut snooze) = (false, false);
         egui::Modal::new(egui::Id::unique("pc-warning")).show(ctx, |ui| {
             ui.set_width(300.0);
             ui.vertical_centered(|ui| {
                 ui.add_space(4.0);
+                if let Some(r) = &reason {
+                    ui.label(RichText::new(r).weak());
+                }
                 ui.label(RichText::new(what).size(16.0));
                 ui.label(bold(fmt_left(left), 44.0));
                 ui.add_space(6.0);
@@ -654,8 +1042,14 @@ impl OffTimer {
             self.pc = None;
         } else if snooze {
             if let Some(run) = &mut self.pc {
-                run.deadline = SystemTime::now() + Duration::from_secs(SNOOZE_SECS);
+                let now = SystemTime::now();
+                run.deadline = now + Duration::from_secs(SNOOZE_SECS);
                 run.warning = false;
+                // 조건 끄기: 10분 동안은 실행하지 않고, 조용한 시간도 처음부터 다시 센다.
+                if let Some(c) = &mut run.cond {
+                    c.hold_until = Some(run.deadline);
+                    c.quiet_since = None;
+                }
             }
         }
     }
@@ -684,6 +1078,131 @@ impl OffTimer {
         });
         if modal.should_close() {
             self.confirm_exit = false;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 받는 바이트 수 기록으로 가짜 표본을 만든다(1초 간격).
+    fn sampler_with(bytes: &[u64]) -> Sampler {
+        let start = Instant::now();
+        let samples = bytes
+            .iter()
+            .enumerate()
+            .map(|(i, b)| (start + Duration::from_secs(i as u64), Some(*b), Some((0, 0))))
+            .collect();
+        Sampler { samples }
+    }
+
+    fn net_run(limit_kb: f64, quiet_min: u64, wait_busy: bool) -> CondRun {
+        CondRun {
+            cond: Cond::Net,
+            limit: limit_kb * 1024.0,
+            quiet_secs: quiet_min * 60,
+            exe: String::new(),
+            busy_seen: !wait_busy,
+            quiet_since: None,
+            hold_until: None,
+        }
+    }
+
+    #[test]
+    fn rate_is_average_over_window() {
+        // 10초 동안 1MB씩 → 1MB/s
+        let s = sampler_with(&(0..=10).map(|i| i * 1024 * 1024).collect::<Vec<_>>());
+        assert!((s.net_bps().unwrap() - 1024.0 * 1024.0).abs() < 1.0);
+        assert_eq!(fmt_rate(1024.0 * 1024.0), "1.0MB/s");
+        assert_eq!(fmt_rate(100.0 * 1024.0), "100KB/s");
+    }
+
+    #[test]
+    fn waits_for_busy_before_counting() {
+        let quiet = sampler_with(&[0, 0, 0]);
+        let busy = sampler_with(&[0, 10 * 1024 * 1024]);
+        let t0 = SystemTime::now();
+        let mut c = net_run(100.0, 5, true);
+        // 처음부터 조용하면 세지 않는다.
+        assert!(!c.check(t0, &quiet));
+        assert!(!c.check(t0 + Duration::from_secs(600), &quiet));
+        assert!(c.quiet_since.is_none());
+        // 바빠진 뒤 조용해지면 그때부터 5분.
+        assert!(!c.check(t0 + Duration::from_secs(601), &busy));
+        assert!(c.busy_seen);
+        let q0 = t0 + Duration::from_secs(602);
+        assert!(!c.check(q0, &quiet));
+        assert!(!c.check(q0 + Duration::from_secs(299), &quiet));
+        assert!(c.check(q0 + Duration::from_secs(300), &quiet));
+    }
+
+    #[test]
+    fn busy_resets_quiet_time() {
+        let quiet = sampler_with(&[0, 0]);
+        let busy = sampler_with(&[0, 10 * 1024 * 1024]);
+        let t0 = SystemTime::now();
+        let mut c = net_run(100.0, 5, false);
+        assert!(!c.check(t0, &quiet));
+        assert!(!c.check(t0 + Duration::from_secs(200), &busy));
+        assert!(!c.check(t0 + Duration::from_secs(301), &quiet));
+        assert!(!c.check(t0 + Duration::from_secs(600), &quiet));
+        assert!(c.check(t0 + Duration::from_secs(601), &quiet));
+    }
+
+    #[test]
+    fn hold_delays_trigger() {
+        let quiet = sampler_with(&[0, 0]);
+        let t0 = SystemTime::now();
+        let mut c = net_run(100.0, 1, false);
+        c.hold_until = Some(t0 + Duration::from_secs(600));
+        assert!(!c.check(t0, &quiet));
+        assert!(!c.check(t0 + Duration::from_secs(599), &quiet));
+        assert!(c.check(t0 + Duration::from_secs(600), &quiet));
+    }
+
+    #[test]
+    fn not_enough_samples_never_triggers() {
+        let s = sampler_with(&[0]);
+        let mut c = net_run(100.0, 1, false);
+        assert!(s.net_bps().is_none());
+        assert!(!c.check(SystemTime::now() + Duration::from_secs(3600), &s));
+    }
+
+    #[test]
+    fn exe_input_adds_extension() {
+        assert_eq!(exe_input(" ffmpeg "), "ffmpeg.exe");
+        assert_eq!(exe_input("setup.exe"), "setup.exe");
+        assert_eq!(exe_input(""), "");
+    }
+
+    #[test]
+    fn real_counters_are_readable() {
+        assert!(win::net_recv_bytes().is_some());
+        let (idle, total) = win::cpu_times().unwrap();
+        assert!(total >= idle && total > 0);
+    }
+}
+
+#[cfg(test)]
+mod live {
+    use super::*;
+
+    /// 실제 측정 확인용(수동): cargo test --release live -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn print_live_rates() {
+        let mut s = Sampler::new();
+        let end = Instant::now() + Duration::from_secs(14);
+        while Instant::now() < end {
+            std::thread::sleep(Duration::from_millis(200));
+            if s.tick() {
+                println!(
+                    "net {} cpu {:.0}%",
+                    s.net_bps().map(fmt_rate).unwrap_or("-".into()),
+                    s.cpu_pct().unwrap_or(-1.0)
+                );
+            }
         }
     }
 }
