@@ -1,0 +1,24 @@
+off-timer - third-party licenses
+================================
+
+off-timer itself is released under the MIT License (see LICENSE in
+https://github.com/sinwa3/pc-toolbox). It is built with the open-source
+components listed below. Their license texts follow.
+
+Overview:
+{{#each overview}}
+  {{name}} ({{count}})
+{{/each}}
+
+{{#each licenses}}
+------------------------------------------------------------------------------
+{{name}} ({{id}})
+
+Used by:
+{{#each used_by}}
+  - {{crate.name}} {{crate.version}}{{#if crate.repository}} ({{crate.repository}}){{/if}}
+{{/each}}
+
+{{text}}
+
+{{/each}}

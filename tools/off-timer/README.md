@@ -63,6 +63,19 @@ cargo build --release
 $env:OFF_TIMER_DRY_RUN = "1"; .\target\release\off-timer.exe
 ```
 
+## 배포 (새 버전 올리기)
+
+1. `Cargo.toml`의 `version`을 올린다.
+2. `powershell -NoProfile -ExecutionPolicy Bypass -File release.ps1 -Version <버전> [-NotesFile 설명.md]`
+   - release 빌드 → `cargo about generate`로 `THIRD-PARTY-LICENSES.txt`(라이브러리·글꼴 저작권 표시와 라이선스 전문) 생성 → GitHub 릴리즈 `off-timer-v<버전>`에 exe와 함께 올린다. 같은 태그가 있으면 파일만 덮어쓴다.
+   - `-NoticesOnly`로 고지문만 만들어 볼 수 있다.
+   - 필요한 것: `cargo install cargo-about --locked --features cli`, `gh` 로그인.
+3. `about.toml`의 `accepted`에 없는 라이선스(GPL 등)가 의존성에 들어오면 고지문 생성이 실패한다. 목록에 넣기 전에 그 라이브러리를 써도 되는지 먼저 정한다.
+
+## 라이선스
+
+MIT (저장소 루트 `LICENSE`). 함께 들어간 오픈소스 라이브러리·글꼴의 라이선스는 릴리즈의 `THIRD-PARTY-LICENSES.txt`.
+
 ## 알려진 제한
 
 - 관리자 권한으로 실행된 프로그램은 끌 수 없다("끄지 못했어요"로 표시).
